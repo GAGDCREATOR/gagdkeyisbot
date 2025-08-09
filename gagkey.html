@@ -1,0 +1,421 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>CAPTCHA + Sistema de Key</title>
+<style>
+  body {
+    margin:0; padding:0;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background: #222;
+    color: white;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+    flex-direction: column;
+    user-select: none;
+  }
+  #container {
+    background: linear-gradient(90deg, #5a8dee, #f6a21f);
+    border-radius: 15px;
+    padding: 30px 40px;
+    width: 350px;
+    box-shadow: 0 0 20px rgba(255,255,255,0.2);
+    position: relative;
+  }
+  h1 {
+    margin-bottom: 20px;
+    text-align: center;
+  }
+  #message {
+    margin: 15px 0 10px;
+    min-height: 24px;
+    text-align: center;
+    font-weight: 600;
+  }
+  #keyDisplay {
+    font-size: 1.2rem;
+    background: #333;
+    padding: 10px 15px;
+    border-radius: 8px;
+    text-align: center;
+    margin-top: 15px;
+    user-select: all;
+  }
+  button {
+    cursor: pointer;
+    padding: 10px 18px;
+    border: none;
+    border-radius: 7px;
+    font-weight: bold;
+    transition: background 0.3s ease;
+  }
+  button#copyKey {
+    background-color: #4caf50;
+    color: white;
+    margin-top: 15px;
+    width: 100%;
+  }
+  button#copyKey:hover {
+    background-color: #3a9d41;
+  }
+  #configBtn {
+    position: fixed;
+    top: 15px;
+    right: 15px;
+    background: #333;
+    color: white;
+    border: none;
+    border-radius: 8px;
+    padding: 10px 14px;
+    font-size: 20px;
+    z-index: 1000;
+  }
+  #configPanel {
+    position: fixed;
+    top: 60px;
+    right: 15px;
+    background: #222;
+    border-radius: 12px;
+    padding: 20px;
+    width: 320px;
+    color: white;
+    box-shadow: 0 0 10px #000;
+    display: none;
+    z-index: 999;
+  }
+  #configPanel label {
+    display: block;
+    margin-bottom: 12px;
+    font-weight: 600;
+  }
+  #configPanel input[type="text"],
+  #configPanel input[type="color"] {
+    width: 100%;
+    padding: 6px 8px;
+    margin-top: 5px;
+    border-radius: 6px;
+    border: none;
+    font-size: 14px;
+  }
+  #configPanel input[type="checkbox"] {
+    margin-left: 10px;
+    transform: scale(1.3);
+    vertical-align: middle;
+  }
+  #configPanel button {
+    margin-top: 10px;
+    width: 100%;
+    background-color: #2e86de;
+    color: white;
+  }
+  #configMsg {
+    margin-top: 10px;
+    font-weight: 600;
+  }
+</style>
+</head>
+<body>
+
+<button id="configBtn" title="Configurações">⚙️</button>
+
+<div id="configPanel">
+  <label>Modo Escuro
+    <input type="checkbox" id="darkModeToggle" />
+  </label>
+  <label>Gradiente Animado
+    <input type="checkbox" id="animatedGradientToggle" />
+  </label>
+  <label>Cor 1
+    <input type="color" id="color1" value="#5a8dee" />
+  </label>
+  <label>Cor 2
+    <input type="color" id="color2" value="#f6a21f" />
+  </label>
+  <label>Código Admin
+    <input type="text" id="adminCodeInput" placeholder="Insira o código admin" />
+    <button id="submitAdminCode">Enviar</button>
+  </label>
+  <div id="adminActions" style="display:none;">
+    <label>Mudar Key
+      <input type="text" id="newKeyInput" placeholder="Nova key para liberar acesso" />
+      <button id="changeKeyBtn">Salvar</button>
+    </label>
+    <p id="configMsg"></p>
+  </div>
+</div>
+
+<div id="container">
+  <h1>Verificação Humana</h1>
+  <p id="message">Por favor, movimente o mouse ou toque na tela para provar que você é humano.</p>
+  <button id="startBtn">Iniciar Verificação</button>
+
+  <div id="keySection" style="display:none;">
+    <p>Sua key:</p>
+    <div id="keyDisplay"></div>
+    <button id="copyKey">📄 Copiar</button>
+  </div>
+</div>
+
+<script>
+  // Variáveis globais
+  let isHumanVerified = false;
+  let mousePositions = [];
+  let lastMoveTime = 0;
+  let adminLogged = false;
+  let currentKey = localStorage.getItem('globalKey') || generateRandomKey();
+
+  const configBtn = document.getElementById('configBtn');
+  const configPanel = document.getElementById('configPanel');
+  const darkModeToggle = document.getElementById('darkModeToggle');
+  const animatedGradientToggle = document.getElementById('animatedGradientToggle');
+  const color1Input = document.getElementById('color1');
+  const color2Input = document.getElementById('color2');
+  const adminCodeInput = document.getElementById('adminCodeInput');
+  const submitAdminCode = document.getElementById('submitAdminCode');
+  const adminActions = document.getElementById('adminActions');
+  const newKeyInput = document.getElementById('newKeyInput');
+  const changeKeyBtn = document.getElementById('changeKeyBtn');
+  const configMsg = document.getElementById('configMsg');
+
+  const container = document.getElementById('container');
+  const message = document.getElementById('message');
+  const startBtn = document.getElementById('startBtn');
+  const keySection = document.getElementById('keySection');
+  const keyDisplay = document.getElementById('keyDisplay');
+  const copyKeyBtn = document.getElementById('copyKey');
+
+  // Função para gerar key aleatória simples
+  function generateRandomKey() {
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+    let key = '';
+    for(let i=0; i<10; i++) {
+      key += chars.charAt(Math.floor(Math.random()*chars.length));
+    }
+    localStorage.setItem('globalKey', key);
+    return key;
+  }
+
+  // Aplica gradiente estático ou animado
+  function applyGradient(animated) {
+    if(animated) {
+      container.style.background = `linear-gradient(270deg, ${color1Input.value}, ${color2Input.value}, ${color1Input.value})`;
+      container.style.backgroundSize = '600% 600%';
+      container.style.animation = 'gradientAnim 15s ease infinite';
+    } else {
+      container.style.background = `linear-gradient(90deg, ${color1Input.value}, ${color2Input.value})`;
+      container.style.backgroundSize = '100% 100%';
+      container.style.animation = 'none';
+    }
+  }
+
+  // CSS animation keyframes para gradiente animado (injetado no JS)
+  const styleTag = document.createElement('style');
+  styleTag.innerHTML = `
+  @keyframes gradientAnim {
+    0%{background-position:0% 50%;}
+    50%{background-position:100% 50%;}
+    100%{background-position:0% 50%;}
+  }
+  `;
+  document.head.appendChild(styleTag);
+
+  // Configurações iniciais
+  applyGradient(false);
+
+  // Alternar painel config
+  configBtn.addEventListener('click', () => {
+    if(configPanel.style.display === 'block') {
+      configPanel.style.display = 'none';
+    } else {
+      configPanel.style.display = 'block';
+    }
+  });
+
+  // Dark mode toggle
+  darkModeToggle.addEventListener('change', () => {
+    if(darkModeToggle.checked) {
+      document.body.style.background = '#121212';
+      document.body.style.color = '#eee';
+    } else {
+      document.body.style.background = '#222';
+      document.body.style.color = 'white';
+    }
+  });
+
+  // Gradiente animado toggle
+  animatedGradientToggle.addEventListener('change', () => {
+    applyGradient(animatedGradientToggle.checked);
+  });
+
+  // Atualizar cores gradiente
+  color1Input.addEventListener('input', () => {
+    applyGradient(animatedGradientToggle.checked);
+  });
+  color2Input.addEventListener('input', () => {
+    applyGradient(animatedGradientToggle.checked);
+  });
+
+  // CÓDIGO ADMIN fixo para exemplo
+  const ADMIN_CODE = '43270';
+
+  // Enviar código admin
+  submitAdminCode.addEventListener('click', () => {
+    if(adminCodeInput.value.trim() === ADMIN_CODE) {
+      adminLogged = true;
+      adminActions.style.display = 'block';
+      configMsg.textContent = 'Você é admin agora!';
+      adminCodeInput.value = '';
+    } else {
+      configMsg.style.color = '#f44336';
+      configMsg.textContent = 'Código admin incorreto!';
+      setTimeout(() => {
+        configMsg.textContent = '';
+        configMsg.style.color = 'white';
+      }, 2000);
+    }
+  });
+
+  // Mudar key global
+  changeKeyBtn.addEventListener('click', () => {
+    if(!adminLogged) return;
+    const newKey = newKeyInput.value.trim().toUpperCase();
+    if(newKey.length < 5) {
+      configMsg.style.color = '#f44336';
+      configMsg.textContent = 'Key muito curta!';
+      return;
+    }
+    currentKey = newKey;
+    localStorage.setItem('globalKey', currentKey);
+    configMsg.style.color = '#4caf50';
+    configMsg.textContent = 'Key alterada para: ' + currentKey;
+    newKeyInput.value = '';
+  });
+
+  // Verificação humana
+
+  function isMovementHumanLike(moves) {
+    // Simples verificação: deve haver movimentos em mais de 1 direção, não linha reta
+    if(moves.length < 10) return false;
+
+    // Calcula ângulos entre segmentos de movimento
+    let angles = [];
+    for(let i = 1; i < moves.length - 1; i++) {
+      const dx1 = moves[i].x - moves[i-1].x;
+      const dy1 = moves[i].y - moves[i-1].y;
+      const dx2 = moves[i+1].x - moves[i].x;
+      const dy2 = moves[i+1].y - moves[i].y;
+
+      const dot = dx1*dx2 + dy1*dy2;
+      const mag1 = Math.sqrt(dx1*dx1 + dy1*dy1);
+      const mag2 = Math.sqrt(dx2*dx2 + dy2*dy2);
+      if(mag1 === 0 || mag2 === 0) continue;
+      const cosAngle = dot/(mag1*mag2);
+      angles.push(cosAngle);
+    }
+    // Se todos os cosAngles estiverem perto de 1 ou -1, é linha reta demais (robô)
+    const straightThreshold = 0.95;
+    const tooStraight = angles.every(a => Math.abs(a) > straightThreshold);
+    return !tooStraight;
+  }
+
+  function onHumanVerified() {
+    isHumanVerified = true;
+    message.textContent = '✅ Verificação concluída! Sua key foi liberada:';
+    startBtn.style.display = 'none';
+    keySection.style.display = 'block';
+    keyDisplay.textContent = currentKey;
+  }
+
+  // Captura movimentos do mouse ou toques
+  function trackUserMovement() {
+    mousePositions = [];
+
+    function addPos(x, y) {
+      mousePositions.push({x, y});
+      if(mousePositions.length > 50) mousePositions.shift(); // limitar buffer
+    }
+
+    if('ontouchstart' in window) {
+      // Mobile
+      window.addEventListener('touchmove', e => {
+        const t = e.touches[0];
+        addPos(t.clientX, t.clientY);
+      }, {passive:true});
+    } else {
+      // Desktop
+      window.addEventListener('mousemove', e => {
+        addPos(e.clientX, e.clientY);
+      });
+    }
+  }
+
+  startBtn.addEventListener('click', () => {
+    message.textContent = 'Movimente-se de forma natural para provar que você é humano...';
+    startBtn.disabled = true;
+    trackUserMovement();
+
+    let checkInterval = setInterval(() => {
+      if(mousePositions.length >= 20) {
+        if(isMovementHumanLike(mousePositions)) {
+          clearInterval(checkInterval);
+          onHumanVerified();
+        } else {
+          // Se for muito linear continua esperando
+        }
+      }
+    }, 500);
+
+    // Timeout para bloquear quem não se mexer em 30s
+    setTimeout(() => {
+      if(!isHumanVerified) {
+        message.textContent = '⏳ Tempo esgotado. Tente se mover de forma natural.';
+        startBtn.disabled = false;
+      }
+    }, 30000);
+  });
+
+  // Copiar key para clipboard
+  copyKeyBtn.addEventListener('click', () => {
+    navigator.clipboard.writeText(currentKey)
+    .then(() => alert('Key copiada para a área de transferência!'))
+    .catch(() => alert('Erro ao copiar a key.'));
+  });
+
+  // Aplicar preferências salvas
+  if(localStorage.getItem('darkMode') === 'true') {
+    darkModeToggle.checked = true;
+    document.body.style.background = '#121212';
+    document.body.style.color = '#eee';
+  }
+  if(localStorage.getItem('gradientAnimated') === 'true') {
+    animatedGradientToggle.checked = true;
+    applyGradient(true);
+  }
+  if(localStorage.getItem('color1')) {
+    color1Input.value = localStorage.getItem('color1');
+  }
+  if(localStorage.getItem('color2')) {
+    color2Input.value = localStorage.getItem('color2');
+  }
+
+  // Salvar preferências
+  darkModeToggle.addEventListener('change', () => {
+    localStorage.setItem('darkMode', darkModeToggle.checked);
+  });
+  animatedGradientToggle.addEventListener('change', () => {
+    localStorage.setItem('gradientAnimated', animatedGradientToggle.checked);
+  });
+  color1Input.addEventListener('input', () => {
+    localStorage.setItem('color1', color1Input.value);
+  });
+  color2Input.addEventListener('input', () => {
+    localStorage.setItem('color2', color2Input.value);
+  });
+
+</script>
+
+</body>
+  </html>
